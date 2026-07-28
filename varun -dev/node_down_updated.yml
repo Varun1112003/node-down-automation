@@ -53,7 +53,7 @@
       register: node_output
 
     #################################################
-    # BUILD REPORT IN MEMORY
+    # BUILD REPORT
     #################################################
 
     - name: Create Report Content
@@ -138,14 +138,14 @@
           {{ node_output.stdout[10] }}
 
     #################################################
-    # OPTIONAL REPORT FILE
+    # DEBUG INCIDENT DETAILS
     #################################################
 
-    - name: Save Report File
-      copy:
-        content: "{{ report_content }}"
-        dest: "/tmp/{{ incident_number }}_NodeDown_Report.txt"
-      delegate_to: localhost
+    - name: Show Incident Details
+      debug:
+        msg:
+          - "Incident Number = {{ incident_number }}"
+          - "Incident Sys ID = {{ incident_sys_id }}"
 
     #################################################
     # UPDATE SERVICENOW
@@ -159,27 +159,31 @@
         password: "{{ snow_password }}"
         force_basic_auth: yes
         validate_certs: no
+        return_content: yes
         headers:
           Content-Type: application/json
           Accept: application/json
         body_format: json
         body:
           work_notes: "{{ report_content }}"
-          incident_state: "7"
-          close_code: "Solved (Permanently)"
-          close_notes: "Node diagnostics completed successfully. Device reachable, health checks completed, and report attached to work notes."
+          incident_state: 7
+          close_code: "Solved Permanently"
+          close_notes: "Node diagnostics completed successfully. Device reachable and diagnostic report attached."
       delegate_to: localhost
       register: update_result
 
     #################################################
-    # DISPLAY RESULT
+    # SHOW SERVICENOW RESPONSE
     #################################################
 
-    - name: Display Result
+    - name: Display ServiceNow Response
+      debug:
+        var: update_result.json
+
+    - name: Success
       debug:
         msg:
           - "Incident Updated Successfully"
           - "Incident Number: {{ incident_number }}"
-          - "Report Generated"
           - "Work Notes Updated"
-          - "Incident Closed"
+          - "Close Request Sent To ServiceNow"

@@ -1,7 +1,7 @@
 ---
-- name: Update and Close Node Down Incident
-  hosts: localhost
-  gather_facts: false
+- name: Node Down Diagnostics and ServiceNow Update
+  hosts: cisco_switches
+  gather_facts: no
 
   vars:
     snow_instance: "nowlearning-nlinst04461932-2vgbd-0001.lab"
@@ -11,7 +11,7 @@
   tasks:
 
     #################################################
-    # GET NODE DOWN INCIDENT
+    # GET INCIDENT
     #################################################
 
     - name: Get Node Down Incident
@@ -23,24 +23,132 @@
         force_basic_auth: yes
         validate_certs: no
         return_content: yes
+      delegate_to: localhost
       register: incident_data
 
     - name: Store Incident Details
       set_fact:
         incident_sys_id: "{{ incident_data.json.result[0].sys_id }}"
         incident_number: "{{ incident_data.json.result[0].number }}"
+        device_name: "{{ incident_data.json.result[0].short_description | regex_search('R[0-9]+') }}"
 
     #################################################
-    # READ NODE DOWN REPORT
+    # RUN DIAGNOSTICS
     #################################################
 
-    - name: Read Node Down Report
-      slurp:
-        src: "./{{ incident_number }}_NodeDown_Report.txt"
-      register: report_file
+    - name: Run Node Health Checks
+      cisco.ios.ios_command:
+        commands:
+          - show version
+          - show memory statistics
+          - show processes cpu
+          - show ip interface brief
+          - show environment power
+          - show diagnostic result switch
+          - show environment fan
+          - show environment temperature
+          - show ip route
+          - show cdp neighbors detail
+          - show spanning-tree summary
+      register: node_output
 
     #################################################
-    # UPDATE WORK NOTES AND CLOSE INCIDENT
+    # BUILD REPORT IN MEMORY
+    #################################################
+
+    - name: Create Report Content
+      set_fact:
+        report_content: |
+          ======================================
+          INCIDENT NUMBER
+          ======================================
+
+          {{ incident_number }}
+
+          ======================================
+          DEVICE NAME
+          ======================================
+
+          {{ device_name }}
+
+          ======================================
+          SHOW VERSION
+          ======================================
+
+          {{ node_output.stdout[0] }}
+
+          ======================================
+          MEMORY
+          ======================================
+
+          {{ node_output.stdout[1] }}
+
+          ======================================
+          CPU
+          ======================================
+
+          {{ node_output.stdout[2] }}
+
+          ======================================
+          IP INTERFACE BRIEF
+          ======================================
+
+          {{ node_output.stdout[3] }}
+
+          ======================================
+          POWER
+          ======================================
+
+          {{ node_output.stdout[4] }}
+
+          ======================================
+          DIAGNOSTICS
+          ======================================
+
+          {{ node_output.stdout[5] }}
+
+          ======================================
+          FAN
+          ======================================
+
+          {{ node_output.stdout[6] }}
+
+          ======================================
+          TEMPERATURE
+          ======================================
+
+          {{ node_output.stdout[7] }}
+
+          ======================================
+          ROUTING
+          ======================================
+
+          {{ node_output.stdout[8] }}
+
+          ======================================
+          CDP NEIGHBORS
+          ======================================
+
+          {{ node_output.stdout[9] }}
+
+          ======================================
+          SPANNING TREE
+          ======================================
+
+          {{ node_output.stdout[10] }}
+
+    #################################################
+    # OPTIONAL REPORT FILE
+    #################################################
+
+    - name: Save Report File
+      copy:
+        content: "{{ report_content }}"
+        dest: "/tmp/{{ incident_number }}_NodeDown_Report.txt"
+      delegate_to: localhost
+
+    #################################################
+    # UPDATE SERVICENOW
     #################################################
 
     - name: Update Work Notes and Close Incident
@@ -56,10 +164,11 @@
           Accept: application/json
         body_format: json
         body:
-          work_notes: "{{ report_file.content | b64decode }}"
+          work_notes: "{{ report_content }}"
           incident_state: "7"
           close_code: "Solved (Permanently)"
           close_notes: "Node diagnostics completed successfully. Device reachable, health checks completed, and report attached to work notes."
+      delegate_to: localhost
       register: update_result
 
     #################################################
@@ -71,5 +180,6 @@
         msg:
           - "Incident Updated Successfully"
           - "Incident Number: {{ incident_number }}"
+          - "Report Generated"
           - "Work Notes Updated"
           - "Incident Closed"

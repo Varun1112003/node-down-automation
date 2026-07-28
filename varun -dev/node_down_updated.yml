@@ -1,6 +1,6 @@
 ---
 - name: Node Down Diagnostics and ServiceNow Update
-  hosts: cisco_switches
+  hosts: all
   gather_facts: no
 
   vars:

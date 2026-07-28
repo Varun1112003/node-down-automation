@@ -1,0 +1,75 @@
+---
+- name: Update and Close Node Down Incident
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    snow_instance: "nowlearning-nlinst04425701-9kcaj-0001.lab"
+    snow_user: "admin"
+    snow_password: "5eQ6UxFCu5mk"
+
+  tasks:
+
+    #################################################
+    # GET NODE DOWN INCIDENT
+    #################################################
+
+    - name: Get Node Down Incident
+      uri:
+        url: "https://{{ snow_instance }}.service-now.com/api/now/table/incident?sysparm_query=short_descriptionLIKENode%20Down%20Alert^active=true"
+        method: GET
+        user: "{{ snow_user }}"
+        password: "{{ snow_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: incident_data
+
+    - name: Store Incident Details
+      set_fact:
+        incident_sys_id: "{{ incident_data.json.result[0].sys_id }}"
+        incident_number: "{{ incident_data.json.result[0].number }}"
+
+    #################################################
+    # READ NODE DOWN REPORT
+    #################################################
+
+    - name: Read Node Down Report
+      slurp:
+        src: "./{{ incident_number }}_NodeDown_Report.txt"
+      register: report_file
+
+    #################################################
+    # UPDATE WORK NOTES AND CLOSE INCIDENT
+    #################################################
+
+    - name: Update Work Notes and Close Incident
+      uri:
+        url: "https://{{ snow_instance }}.service-now.com/api/now/table/incident/{{ incident_sys_id }}"
+        method: PATCH
+        user: "{{ snow_user }}"
+        password: "{{ snow_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+        body_format: json
+        body:
+          work_notes: "{{ report_file.content | b64decode }}"
+          incident_state: "7"
+          close_code: "Solved (Permanently)"
+          close_notes: "Node diagnostics completed successfully. Device reachable, health checks completed, and report attached to work notes."
+      register: update_result
+
+    #################################################
+    # DISPLAY RESULT
+    #################################################
+
+    - name: Display Result
+      debug:
+        msg:
+          - "Incident Updated Successfully"
+          - "Incident Number: {{ incident_number }}"
+          - "Work Notes Updated"
+          - "Incident Closed"

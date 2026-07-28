@@ -1,0 +1,138 @@
+---
+- name: Node Down Diagnostics
+  hosts: cisco_switches
+  gather_facts: no
+
+  vars:
+    snow_instance: "nowlearning-nlinst04425701-9kcaj-0001.lab"
+    snow_user: "admin"
+    snow_password: "5eQ6UxFCu5mk"
+
+  tasks:
+
+    - name: Get Node Down Incident
+      uri:
+        url: "https://{{ snow_instance }}.service-now.com/api/now/table/incident?sysparm_query=short_descriptionLIKENode%20Down%20Alert^active=true"
+        method: GET
+        user: "{{ snow_user }}"
+        password: "{{ snow_password }}"
+        force_basic_auth: yes
+        return_content: yes
+      delegate_to: localhost
+      register: incident_data
+
+    - name: Store Incident Details
+      set_fact:
+        incident_number: "{{ incident_data.json.result[0].number }}"
+        device_name: >-
+          {{
+            incident_data.json.result[0].short_description
+            | regex_search('R[0-9]+')
+          }}
+
+    - name: Run Node Health Checks
+      cisco.ios.ios_command:
+        commands:
+          - "show version"
+          - "show memory statistics"
+          - "show processes cpu"
+          - "show ip interface brief"
+          - "show environment power"
+          - "show diagnostic result switch"
+          - "show environment fan"
+          - "show environment temperature"
+          - "show ip route"
+          - "show cdp neighbors detail"
+          - "show spanning-tree summary"
+      register: node_output
+
+    - name: Generate Report
+      copy:
+        content: |
+          ======================================
+          INCIDENT NUMBER
+          ======================================
+
+          {{ incident_number }}
+
+          ======================================
+          DEVICE NAME
+          ======================================
+
+          {{ device_name }}
+
+          ======================================
+          SHOW VERSION
+          ======================================
+
+          {{ node_output.stdout[0] }}
+
+          ======================================
+          MEMORY
+          ======================================
+
+          {{ node_output.stdout[1] }}
+
+          ======================================
+          CPU
+          ======================================
+
+          {{ node_output.stdout[2] }}
+
+          ======================================
+          IP INTERFACE BRIEF
+          ======================================
+
+          {{ node_output.stdout[3] }}
+
+          ======================================
+          POWER
+          ======================================
+
+          {{ node_output.stdout[4] }}
+
+          ======================================
+          DIAGNOSTICS
+          ======================================
+
+          {{ node_output.stdout[5] }}
+
+          ======================================
+          FAN
+          ======================================
+
+          {{ node_output.stdout[6] }}
+
+          ======================================
+          TEMPERATURE
+          ======================================
+
+          {{ node_output.stdout[7] }}
+
+          ======================================
+          ROUTING
+          ======================================
+
+          {{ node_output.stdout[8] }}
+
+          ======================================
+          CDP NEIGHBORS
+          ======================================
+
+          {{ node_output.stdout[9] }}
+
+          ======================================
+          SPANNING TREE
+          ======================================
+
+          {{ node_output.stdout[10] }}
+
+        dest: "./{{ incident_number }}_NodeDown_Report.txt"
+
+      delegate_to: localhost
+
+    - name: Success
+      debug:
+        msg:
+          - "Report Generated Successfully"
+          - "{{ incident_number }}_NodeDown_Report.txt"
